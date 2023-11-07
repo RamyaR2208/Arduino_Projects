@@ -1,0 +1,121 @@
+/* I2C: start - slave address + R/W + ACK - data + ACK - stop */
+
+#define TSens A3
+#define SDA 6
+#define SCL 7
+#define LCDaddr 0x27             // NXP PCF8574T slave address
+
+float deg, val;
+
+void I2c_start()
+{
+  digitalWrite(SCL, HIGH);
+  digitalWrite(SDA, HIGH);
+  digitalWrite(SDA, LOW);
+}
+
+void I2c_stop()
+{
+  digitalWrite(SDA, LOW);
+  digitalWrite(SCL, HIGH);
+  digitalWrite(SDA, HIGH);
+}
+
+void I2c_ACK()
+{
+  digitalWrite(SCL, LOW);
+  digitalWrite(SDA, HIGH);
+  digitalWrite(SCL, HIGH);
+  digitalWrite(SCL, LOW);
+}
+
+void I2c_bytewrite(unsigned char d)            // Sending MSB first
+{
+  unsigned char i;
+  for(i = 0; i < 8; i ++)
+  {
+    digitalWrite(SCL, LOW);
+    digitalWrite(SDA, ((d & (0x80 >> i)) ? HIGH : LOW));
+    digitalWrite(SCL, HIGH);
+   }
+   I2c_ACK();
+ }
+
+void I2c_write_LCDcmd(unsigned char d)
+{
+  I2c_start();
+  I2c_bytewrite((LCDaddr << 1) | 0);              //8 to 7 bit | last bit R/W    
+  /* data write */
+  I2c_bytewrite(0x00);                            //I2c_send configure port pins as outputs
+  I2c_bytewrite((d & 0xF0) | 0x0C);               //4-bit upper nibble data | Light(1)-en(1)-rw(0)-rs(0)
+  delay(2);
+  I2c_bytewrite((d & 0xF0) | 0x08);               //en(0)
+  delay(1);
+  I2c_bytewrite(((d & 0x0F) << 4) | 0x0C);        //4-bit lower nibble data | Light(1)-en(1)-rw(0)-rs(0)
+  delay(2);
+  I2c_bytewrite(((d & 0x0F) << 4) | 0x08);        //en(0)
+  delay(1);
+  /* data write */
+  I2c_stop();
+  delay(10);  
+}
+
+ void LCD_init()
+ {
+  delay(20);                         //NXP PCF8574T stat up time
+  I2c_write_LCDcmd(0x01);            //Clear screen 
+  I2c_write_LCDcmd(0x02);            // Return home addr
+  I2c_write_LCDcmd(0x28);            // Select both line of display - 4 bit
+  I2c_write_LCDcmd(0x0C);            //display on, cursor off
+  I2c_write_LCDcmd(0x80);            //Select DDRAM
+ }
+
+void I2c_write_LCDdata(unsigned char d)
+{
+  I2c_start();
+  I2c_bytewrite((LCDaddr << 1) | 0);                
+  /* data write */    
+  I2c_bytewrite(0x00);                   
+  I2c_bytewrite((d & 0xF0) | 0x0D);               
+  delay(2);
+  I2c_bytewrite((d & 0xF0) | 0x09);               
+  delay(1);
+  I2c_bytewrite(((d & 0x0F) << 4) | 0x0D);        
+  delay(2);
+  I2c_bytewrite(((d & 0x0F) << 4) | 0x09);        
+  delay(1);
+  /* data write */
+  I2c_stop();
+  delay(10);  
+}
+
+void inttochar(int d, char * q)                 //4-digits with 2 decimal values
+{
+  q[4] = d % 10 + 48;
+  q[3] = (d / 10) % 10 + 48;
+  q[2] = '.';
+  q[1] = (d / 100) % 10 + 48;
+  q[0] = d / 1000 + 48;
+}
+
+void setup() {
+  pinMode(TSens, INPUT);
+  pinMode(SDA, OUTPUT);          // using A4 as SDA generator
+  pinMode(SCL, OUTPUT);          //using A5 as SCL generator
+
+  LCD_init();
+}
+
+void loop() {
+  int i; char p[12] = {'T', 'E', 'M', 'P', ' ', '=', ' '};
+  val = analogRead(TSens);           // LM35
+  deg = (val * 500) / 1024; 
+
+  I2c_write_LCDcmd(0x80);            //Select first position each time
+  for(i = 0; i <= 6; i ++)
+    I2c_write_LCDdata(p[i]);
+  inttochar(deg * 100, &p[7]);       //LCD works with ASCII values
+  for(; i < 12; i ++)
+    I2c_write_LCDdata(p[i]);
+  
+ }
